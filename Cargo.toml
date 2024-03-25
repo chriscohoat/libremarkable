@@ -40,6 +40,7 @@ hlua = { version = "0.4.1", optional = true }
 
 # runtime benchmarking
 stopwatch = { version = "0.0.7", optional = true }
+rand = "0.8.5"
 
 [features]
 default = ["scan", "framebuffer-types", "framebuffer", "framebuffer-storage", "framebuffer-drawing", "image", "framebuffer-text-drawing", "input-types", "input", "battery", "appctx", "hlua"]
@@ -56,6 +57,7 @@ battery = []
 appctx = ["framebuffer-text-drawing", "input", "aabb-quadtree"]
 
 enable-runtime-benchmarking = ["stopwatch"]
+image = ["dep:image"]
 
 [profile.release]
 debug = true

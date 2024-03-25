@@ -1,6 +1,8 @@
 # For non-musl, use: armv7-unknown-linux-gnueabihf
 TARGET ?= armv7-unknown-linux-musleabihf
 
+# DEVICE_IP ?= '10.11.99.1'
+# DEVICE_IP ?= 'remarkable.local'
 DEVICE_IP ?= '10.11.99.1'
 DEVICE_HOST ?= root@$(DEVICE_IP)
 

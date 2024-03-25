@@ -4,10 +4,11 @@ use std::collections::HashMap;
 #[cfg(not(feature = "hlua"))]
 use std::marker::PhantomData;
 use std::ops::DerefMut;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{ AtomicBool, Ordering };
 use std::sync::RwLock;
+use std::sync::RwLockReadGuard;
 
-use aabb_quadtree::{geom, ItemId, QuadTree};
+use aabb_quadtree::{ geom, ItemId, QuadTree };
 #[cfg(feature = "hlua")]
 use log::warn;
 
@@ -19,9 +20,12 @@ use crate::framebuffer::FramebufferRefresh;
 use crate::framebuffer::PartialRefreshMode;
 use crate::input::ev;
 use crate::input::MultitouchEvent;
-use crate::input::{InputDevice, InputEvent};
+use crate::input::{ InputDevice, InputEvent };
 use crate::ui_extensions::element::{
-    ActiveRegionFunction, ActiveRegionHandler, UIConstraintRefresh, UIElementHandle,
+    ActiveRegionFunction,
+    ActiveRegionHandler,
+    UIConstraintRefresh,
+    UIElementHandle,
     UIElementWrapper,
 };
 
@@ -33,6 +37,50 @@ use crate::ui_extensions::luaext;
 
 unsafe impl<'a> Send for ApplicationContext<'a> {}
 unsafe impl<'a> Sync for ApplicationContext<'a> {}
+
+struct PersonalInfo {}
+struct ContactInfo {}
+
+enum FormStep {
+    PersonalInfo,
+    ContactInfo,
+}
+
+struct FormState {
+    current_step: FormStep,
+    personal_info: Option<PersonalInfo>,
+    contact_info: Option<ContactInfo>,
+}
+
+impl FormState {
+    fn new() -> Self {
+        Self {
+            current_step: FormStep::PersonalInfo,
+            personal_info: None,
+            contact_info: None,
+        }
+    }
+
+    fn advance_step(&mut self) {
+        self.current_step = match self.current_step {
+            FormStep::PersonalInfo => FormStep::ContactInfo,
+            // Add transitions for other steps
+            _ => {
+                return;
+            }
+        };
+    }
+
+    fn previous_step(&mut self) {
+        self.current_step = match self.current_step {
+            FormStep::ContactInfo => FormStep::PersonalInfo,
+            // Add transitions for other steps
+            _ => {
+                return;
+            }
+        };
+    }
+}
 
 pub struct ApplicationContext<'a> {
     framebuffer: Box<core::Framebuffer>,
@@ -55,6 +103,8 @@ pub struct ApplicationContext<'a> {
 
     active_regions: QuadTree<ActiveRegionHandler>,
     ui_elements: HashMap<String, UIElementHandle>,
+
+    form_state: RwLock<FormState>,
 }
 
 impl Default for ApplicationContext<'static> {
@@ -80,13 +130,16 @@ impl Default for ApplicationContext<'static> {
             input_rx,
             input_tx,
             ui_elements: HashMap::new(),
-            active_regions: QuadTree::default(geom::Rect::from_points(
-                &geom::Point { x: 0.0, y: 0.0 },
-                &geom::Point {
-                    x: xres as f32,
-                    y: yres as f32,
-                },
-            )),
+            active_regions: QuadTree::default(
+                geom::Rect::from_points(
+                    &(geom::Point { x: 0.0, y: 0.0 }),
+                    &(geom::Point {
+                        x: xres as f32,
+                        y: yres as f32,
+                    })
+                )
+            ),
+            form_state: RwLock::new(FormState::new()),
         };
 
         // Enable all std lib
@@ -98,7 +151,9 @@ impl Default for ApplicationContext<'static> {
 
             // Reluctantly resort to using a static global to associate the lua context with the
             // one and only framebuffer that's going to be used
-            unsafe { luaext::G_FB = res.framebuffer.deref_mut() as *mut core::Framebuffer };
+            unsafe {
+                luaext::G_FB = res.framebuffer.deref_mut() as *mut core::Framebuffer;
+            }
 
             let mut nms = lua.empty_array("fb");
             // Clears and refreshes the entire screen
@@ -120,6 +175,34 @@ impl Default for ApplicationContext<'static> {
 }
 
 impl<'a> ApplicationContext<'a> {
+    pub fn get_form_state(&self) {
+        println!("Current form state:");
+        /*
+        // println!("Current form state: {:?}", self.form_state.read().unwrap().current_step);
+        match self.form_state.read().unwrap().current_step {
+            FormStep::PersonalInfo => {
+                // println!("Personal Info: {:?}", self.form_state.read().unwrap().personal_info);
+                println!("Personal Info");
+            }
+            FormStep::ContactInfo => {
+                // println!("Contact Info: {:?}", self.form_state.read().unwrap().contact_info);
+                println!("Contact Info");
+            }
+            _ => {
+                println!("Unknown form step");
+            }
+        }
+        */
+    }
+
+    pub fn advance_form_step(&self) {
+        println!("Advancing form step");
+        let mut form_state = self.form_state.write().unwrap();
+        form_state.advance_step();
+        // print the state:
+        self.get_form_state();
+    }
+
     pub fn get_framebuffer_ref(&mut self) -> &'static mut core::Framebuffer {
         unsafe {
             std::mem::transmute::<_, &'static mut core::Framebuffer>(self.framebuffer.deref_mut())
@@ -163,9 +246,18 @@ impl<'a> ApplicationContext<'a> {
         border_padding: u32,
         text: &str,
         refresh: UIConstraintRefresh,
+        fit_to_max_width: Option<f32>
     ) -> mxcfb_rect {
         let framebuffer = self.get_framebuffer_ref();
-        let mut draw_area: mxcfb_rect = framebuffer.draw_text(position, text, scale, c, false);
+        
+        let mut draw_area: mxcfb_rect = match fit_to_max_width {
+            Some(max_width) => {
+                framebuffer.draw_autoscaled_text(position, text, max_width, c, false)
+            }
+            None => {
+                framebuffer.draw_text(position, text, scale, c, false)
+            }
+        };
 
         // Draw the border if border_px is set to a non-default value
         if border_px > 0 {
@@ -174,22 +266,24 @@ impl<'a> ApplicationContext<'a> {
                 draw_area.top_left().cast().unwrap(),
                 draw_area.size(),
                 border_px,
-                c,
+                c
             );
         }
 
         let marker = match refresh {
-            UIConstraintRefresh::Refresh | UIConstraintRefresh::RefreshAndWait => framebuffer
-                .partial_refresh(
+            UIConstraintRefresh::Refresh | UIConstraintRefresh::RefreshAndWait =>
+                framebuffer.partial_refresh(
                     &draw_area,
                     PartialRefreshMode::Async,
                     waveform_mode::WAVEFORM_MODE_GC16_FAST,
                     display_temp::TEMP_USE_REMARKABLE_DRAW,
                     dither_mode::EPDC_FLAG_USE_DITHERING_PASSTHROUGH,
                     0,
-                    false,
+                    false
                 ),
-            _ => return draw_area,
+            _ => {
+                return draw_area;
+            }
         };
 
         if let UIConstraintRefresh::RefreshAndWait = refresh {
@@ -204,24 +298,26 @@ impl<'a> ApplicationContext<'a> {
         size: cgmath::Vector2<u32>,
         border_px: u32,
         border_color: color,
-        refresh: UIConstraintRefresh,
+        refresh: UIConstraintRefresh
     ) -> mxcfb_rect {
         let framebuffer = self.get_framebuffer_ref();
 
         framebuffer.draw_rect(position, size, border_px, border_color);
         let draw_area = mxcfb_rect::from(position.cast().unwrap(), size);
         let marker = match refresh {
-            UIConstraintRefresh::Refresh | UIConstraintRefresh::RefreshAndWait => framebuffer
-                .partial_refresh(
+            UIConstraintRefresh::Refresh | UIConstraintRefresh::RefreshAndWait =>
+                framebuffer.partial_refresh(
                     &draw_area,
                     PartialRefreshMode::Async,
                     waveform_mode::WAVEFORM_MODE_GC16_FAST,
                     display_temp::TEMP_USE_REMARKABLE_DRAW,
                     dither_mode::EPDC_FLAG_USE_DITHERING_PASSTHROUGH,
                     0,
-                    false,
+                    false
                 ),
-            _ => return draw_area,
+            _ => {
+                return draw_area;
+            }
         };
 
         if let UIConstraintRefresh::RefreshAndWait = refresh {
@@ -235,7 +331,7 @@ impl<'a> ApplicationContext<'a> {
         &mut self,
         img: &image::DynamicImage,
         position: cgmath::Point2<i32>,
-        refresh: UIConstraintRefresh,
+        refresh: UIConstraintRefresh
     ) -> mxcfb_rect {
         let framebuffer = self.get_framebuffer_ref();
         let draw_area = match img {
@@ -243,17 +339,19 @@ impl<'a> ApplicationContext<'a> {
             other => framebuffer.draw_image(&other.to_rgb8(), position),
         };
         let marker = match refresh {
-            UIConstraintRefresh::Refresh | UIConstraintRefresh::RefreshAndWait => framebuffer
-                .partial_refresh(
+            UIConstraintRefresh::Refresh | UIConstraintRefresh::RefreshAndWait =>
+                framebuffer.partial_refresh(
                     &draw_area,
                     PartialRefreshMode::Async,
                     waveform_mode::WAVEFORM_MODE_GC16_FAST,
                     display_temp::TEMP_USE_REMARKABLE_DRAW,
                     dither_mode::EPDC_FLAG_USE_DITHERING_PASSTHROUGH,
                     0,
-                    false,
+                    false
                 ),
-            _ => return draw_area,
+            _ => {
+                return draw_area;
+            }
         };
 
         if let UIConstraintRefresh::RefreshAndWait = refresh {
@@ -265,7 +363,7 @@ impl<'a> ApplicationContext<'a> {
     pub fn add_element(
         &mut self,
         name: &str,
-        element: UIElementWrapper,
+        element: UIElementWrapper
     ) -> Option<UIElementHandle> {
         if self.ui_elements.contains_key(name) {
             return None;
@@ -331,7 +429,7 @@ impl<'a> ApplicationContext<'a> {
                     display_temp::TEMP_USE_AMBIENT,
                     dither_mode::EPDC_FLAG_USE_DITHERING_PASSTHROUGH,
                     0,
-                    false,
+                    false
                 );
 
                 // We can pass None as the `handler` here as we know this flashing is not
@@ -343,10 +441,7 @@ impl<'a> ApplicationContext<'a> {
 
     pub fn clear(&mut self, deep: bool) {
         let framebuffer = self.get_framebuffer_ref();
-        let (yres, xres) = (
-            framebuffer.var_screen_info.yres,
-            framebuffer.var_screen_info.xres,
-        );
+        let (yres, xres) = (framebuffer.var_screen_info.yres, framebuffer.var_screen_info.xres);
         framebuffer.clear();
 
         if deep {
@@ -355,22 +450,22 @@ impl<'a> ApplicationContext<'a> {
                 display_temp::TEMP_USE_AMBIENT,
                 dither_mode::EPDC_FLAG_USE_DITHERING_PASSTHROUGH,
                 0,
-                true,
+                true
             );
         } else {
             framebuffer.partial_refresh(
-                &mxcfb_rect {
+                &(mxcfb_rect {
                     top: 0,
                     left: 0,
                     height: yres,
                     width: xres,
-                },
+                }),
                 PartialRefreshMode::Wait,
                 waveform_mode::WAVEFORM_MODE_GC16_FAST,
                 display_temp::TEMP_USE_AMBIENT,
                 dither_mode::EPDC_FLAG_USE_DITHERING_PASSTHROUGH,
                 0,
-                false,
+                false
             );
         }
     }
@@ -408,7 +503,9 @@ impl<'a> ApplicationContext<'a> {
             InputDevice::Wacom => self.wacom_ctx.write().unwrap(),
             InputDevice::Multitouch => self.touch_ctx.write().unwrap(),
             InputDevice::GPIO => self.button_ctx.write().unwrap(),
-            _ => return false,
+            _ => {
+                return false;
+            }
         };
 
         let mut unwrapped = dev.take().unwrap();
@@ -431,7 +528,9 @@ impl<'a> ApplicationContext<'a> {
             InputDevice::Wacom => self.wacom_ctx.write().unwrap(),
             InputDevice::Multitouch => self.touch_ctx.write().unwrap(),
             InputDevice::GPIO => self.button_ctx.write().unwrap(),
-            _ => return false,
+            _ => {
+                return false;
+            }
         };
 
         *dev = Some(ev::EvDevContext::new(t, self.input_tx.clone()));
@@ -449,7 +548,9 @@ impl<'a> ApplicationContext<'a> {
     /// currently running `epoll` thread
     pub fn is_input_device_active(&self, t: InputDevice) -> bool {
         let ctx = match t {
-            InputDevice::Unknown => return false,
+            InputDevice::Unknown => {
+                return false;
+            }
             InputDevice::GPIO => self.button_ctx.read().unwrap(),
             InputDevice::Multitouch => self.touch_ctx.read().unwrap(),
             InputDevice::Wacom => self.wacom_ctx.read().unwrap(),
@@ -469,7 +570,7 @@ impl<'a> ApplicationContext<'a> {
         activate_wacom: bool,
         activate_multitouch: bool,
         activate_buttons: bool,
-        mut callback: F,
+        mut callback: F
     ) {
         let appref = self.upgrade_ref();
 
@@ -494,13 +595,18 @@ impl<'a> ApplicationContext<'a> {
                 Ok(event) => {
                     if let InputEvent::MultitouchEvent { event } = event {
                         // Check for and notify clickable active regions for multitouch events
-                        if let MultitouchEvent::Press { finger }
-                        | MultitouchEvent::Move { finger } = event
+                        if
+                            let
+                            | MultitouchEvent::Press { finger }
+                            | MultitouchEvent::Move { finger } = event
                         {
                             let gseq = finger.tracking_id;
                             if last_active_region_gesture_id != gseq {
-                                if let Some((h, _)) =
-                                    self.find_active_region(finger.pos.y, finger.pos.x)
+                                if
+                                    let Some((h, _)) = self.find_active_region(
+                                        finger.pos.y,
+                                        finger.pos.x
+                                    )
                                 {
                                     (h.handler)(appref, h.element.clone());
                                 }
@@ -511,7 +617,7 @@ impl<'a> ApplicationContext<'a> {
 
                     callback(appref, event);
                 }
-            };
+            }
         }
     }
 
@@ -524,8 +630,7 @@ impl<'a> ApplicationContext<'a> {
         if self.running.load(Ordering::Relaxed) {
             if let InputEvent::MultitouchEvent { event } = event {
                 // Check for and notify clickable active regions for multitouch events
-                if let MultitouchEvent::Press { finger } | MultitouchEvent::Move { finger } = event
-                {
+                if let MultitouchEvent::Press { finger } | MultitouchEvent::Move { finger } = event {
                     if let Some((h, _)) = self.find_active_region(finger.pos.y, finger.pos.x) {
                         (h.handler)(appref, h.element.clone());
                     }
@@ -535,13 +640,15 @@ impl<'a> ApplicationContext<'a> {
     }
 
     pub fn find_active_region(&self, y: u16, x: u16) -> Option<(&ActiveRegionHandler, ItemId)> {
-        let matches = self.active_regions.query(geom::Rect::centered_with_radius(
-            &geom::Point {
-                y: f32::from(y),
-                x: f32::from(x),
-            },
-            2.0,
-        ));
+        let matches = self.active_regions.query(
+            geom::Rect::centered_with_radius(
+                &(geom::Point {
+                    y: f32::from(y),
+                    x: f32::from(x),
+                }),
+                2.0
+            )
+        );
         matches.first().map(|res| (res.0, res.2))
     }
 
@@ -559,20 +666,20 @@ impl<'a> ApplicationContext<'a> {
         height: u16,
         width: u16,
         handler: ActiveRegionFunction,
-        element: UIElementHandle,
+        element: UIElementHandle
     ) {
         self.active_regions.insert_with_box(
             ActiveRegionHandler { handler, element },
             geom::Rect::from_points(
-                &geom::Point {
+                &(geom::Point {
                     x: f32::from(x),
                     y: f32::from(y),
-                },
-                &geom::Point {
+                }),
+                &(geom::Point {
                     x: f32::from(x + width),
                     y: f32::from(y + height),
-                },
-            ),
+                })
+            )
         );
     }
 }

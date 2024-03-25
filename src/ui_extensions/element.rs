@@ -78,6 +78,7 @@ pub enum UIElement {
         scale: f32,
         foreground: color,
         border_px: u32,
+        fit_to_max_width: Option<f32>,
     },
     #[cfg(feature = "image")]
     Image { img: image::DynamicImage },
@@ -148,6 +149,7 @@ impl UIElementWrapper {
                 scale,
                 foreground,
                 border_px,
+                fit_to_max_width,
             } => app.display_text(
                 self.position.cast().unwrap(),
                 foreground,
@@ -156,6 +158,7 @@ impl UIElementWrapper {
                 8,
                 text,
                 refresh,
+                fit_to_max_width
             ),
             #[cfg(feature = "image")]
             UIElement::Image { ref img } => {

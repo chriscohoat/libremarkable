@@ -105,6 +105,15 @@ pub trait FramebufferDraw {
         col: common::color,
         dryrun: bool,
     ) -> common::mxcfb_rect;
+    #[cfg(feature = "framebuffer-text-drawing")]
+    fn draw_autoscaled_text(
+        &mut self,
+        pos: cgmath::Point2<f32>,
+        text: &str,
+        max_width: f32,
+        col: common::color,
+        dryrun: bool
+    ) -> common::mxcfb_rect;
     /// Draws a 1px border rectangle of size `size` at `pos` with `border_px` border thickness
     fn draw_rect(
         &mut self,
