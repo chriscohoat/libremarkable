@@ -12,6 +12,7 @@ use crate::framebuffer::common::*;
 use crate::framebuffer::core;
 use crate::framebuffer::graphics;
 use crate::framebuffer::FramebufferIO;
+use crate::ui_extensions::element::FitToMaxDetails;
 
 #[cfg(feature = "framebuffer-text-drawing")]
 pub static DEFAULT_FONT: Lazy<Font<'static>> = Lazy::new(|| {
@@ -139,37 +140,38 @@ impl framebuffer::FramebufferDraw for core::Framebuffer {
             samples
         )
     }
-
     #[cfg(feature = "framebuffer-text-drawing")]
     fn draw_autoscaled_text(
         &mut self,
         pos: Point2<f32>,
         text: &str,
-        max_width: f32,
+        max_details: FitToMaxDetails,
         col: color,
         dryrun: bool
     ) -> mxcfb_rect {
-        // Implementation of fit_to_max_width
-
-        // Minimum scale as the base scale
-        let min_scale = Scale::uniform(40.0);
+        // Starting with the minimum scale based on FitToMaxDetails
+        let base_scale = Scale::uniform(max_details.min_text_scale);
         let mut text_width = 0.0;
 
-        // Calculate the total width of the text at the minimum scale
-        for glyph in DEFAULT_FONT.layout(text, min_scale, point(0.0, 0.0)) {
+        // Calculate the total width of the text at the base (minimum) scale
+        for glyph in DEFAULT_FONT.layout(text, base_scale, point(0.0, 0.0)) {
             text_width += glyph.unpositioned().h_metrics().advance_width;
         }
 
-        // Determine if scale needs to be adjusted to maximize width without exceeding max_width
-        let scale_factor = if text_width < max_width {
-            // If text width at min scale is less than max width, adjust the scale to fit or fill max_width
-            (max_width / text_width) * min_scale.x
+        // Calculate a new scale factor based on the desired max width, but constrained within min/max scales
+        let mut scale_factor = if text_width < f32::from(max_details.max_width_in_px) {
+            // Adjust the scale to either fit or fill the max_width
+            (f32::from(max_details.max_width_in_px) / text_width) * base_scale.x
         } else {
-            // If text width at min scale exceeds max width, maintain min scale
-            min_scale.x
+            // If text width at base scale exceeds max width, maintain base scale
+            base_scale.x
         };
+
+        // Ensure the scale factor respects the min/max text scale boundaries
+        scale_factor = scale_factor.clamp(max_details.min_text_scale, max_details.max_text_scale);
         let scale = Scale::uniform(scale_factor);
 
+        // Continue with drawing text using the calculated and constrained scale
         let final_text = format!("{}", text);
         self.draw_text(pos, &final_text, scale.x, col, dryrun)
     }

@@ -2,6 +2,8 @@ pub mod common;
 pub mod mxcfb;
 pub mod screeninfo;
 
+use crate::ui_extensions::element::FitToMaxDetails;
+
 #[cfg(feature = "framebuffer-storage")]
 pub mod storage;
 
@@ -110,7 +112,7 @@ pub trait FramebufferDraw {
         &mut self,
         pos: cgmath::Point2<f32>,
         text: &str,
-        max_width: f32,
+        max_details: FitToMaxDetails,
         col: common::color,
         dryrun: bool
     ) -> common::mxcfb_rect;

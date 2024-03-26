@@ -27,6 +27,7 @@ use crate::ui_extensions::element::{
     UIConstraintRefresh,
     UIElementHandle,
     UIElementWrapper,
+    FitToMaxDetails,
 };
 
 #[cfg(feature = "hlua")]
@@ -246,13 +247,13 @@ impl<'a> ApplicationContext<'a> {
         border_padding: u32,
         text: &str,
         refresh: UIConstraintRefresh,
-        fit_to_max_width: Option<f32>
+        fit_to_max_details: Option<FitToMaxDetails>
     ) -> mxcfb_rect {
         let framebuffer = self.get_framebuffer_ref();
         
-        let mut draw_area: mxcfb_rect = match fit_to_max_width {
-            Some(max_width) => {
-                framebuffer.draw_autoscaled_text(position, text, max_width, c, false)
+        let mut draw_area: mxcfb_rect = match fit_to_max_details {
+            Some(max_details) => {
+                framebuffer.draw_autoscaled_text(position, text, max_details, c, false)
             }
             None => {
                 framebuffer.draw_text(position, text, scale, c, false)

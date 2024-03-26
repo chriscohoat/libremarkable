@@ -71,6 +71,13 @@ impl PartialEq for UIElementWrapper {
 
 impl Eq for UIElementWrapper {}
 
+#[derive(Clone, Copy, Debug)]
+pub struct FitToMaxDetails {
+    pub max_width_in_px: f32,
+    pub max_text_scale: f32,
+    pub min_text_scale: f32,
+}
+
 #[derive(Clone, Default, Debug)]
 pub enum UIElement {
     Text {
@@ -78,7 +85,7 @@ pub enum UIElement {
         scale: f32,
         foreground: color,
         border_px: u32,
-        fit_to_max_width: Option<f32>,
+        fit_to_max_details: Option<FitToMaxDetails>,
     },
     #[cfg(feature = "image")]
     Image { img: image::DynamicImage },
@@ -149,7 +156,7 @@ impl UIElementWrapper {
                 scale,
                 foreground,
                 border_px,
-                fit_to_max_width,
+                fit_to_max_details,
             } => app.display_text(
                 self.position.cast().unwrap(),
                 foreground,
@@ -158,7 +165,7 @@ impl UIElementWrapper {
                 8,
                 text,
                 refresh,
-                fit_to_max_width
+                fit_to_max_details
             ),
             #[cfg(feature = "image")]
             UIElement::Image { ref img } => {
