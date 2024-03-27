@@ -131,16 +131,20 @@ impl UIElementWrapper {
                 // reason and showing a blank frame. There is of course still a caveat since we don't
                 // know the dimensions of a drawn text before it is actually drawn.
                 // TODO: Take care of the point above ^
-                if rect.top_left() != self.position.cast().unwrap() {
-                    framebuffer.partial_refresh(
-                        &rect,
-                        PartialRefreshMode::Wait,
-                        common::waveform_mode::WAVEFORM_MODE_DU,
-                        common::display_temp::TEMP_USE_REMARKABLE_DRAW,
-                        common::dither_mode::EPDC_FLAG_USE_DITHERING_PASSTHROUGH,
-                        0,
-                        false,
-                    );
+                if let Some(casted_position) = self.position.cast() {
+                    if rect.top_left() != casted_position {
+                        framebuffer.partial_refresh(
+                            &rect,
+                            PartialRefreshMode::Wait,
+                            common::waveform_mode::WAVEFORM_MODE_DU,
+                            common::display_temp::TEMP_USE_REMARKABLE_DRAW,
+                            common::dither_mode::EPDC_FLAG_USE_DITHERING_PASSTHROUGH,
+                            0,
+                            false,
+                        );
+                    }
+                } else {
+                    eprintln!("Failed to cast position to Point2<i32>");
                 }
 
                 rect

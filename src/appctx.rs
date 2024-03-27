@@ -250,14 +250,12 @@ impl<'a> ApplicationContext<'a> {
         fit_to_max_details: Option<FitToMaxDetails>
     ) -> mxcfb_rect {
         let framebuffer = self.get_framebuffer_ref();
-        
+
         let mut draw_area: mxcfb_rect = match fit_to_max_details {
             Some(max_details) => {
                 framebuffer.draw_autoscaled_text(position, text, max_details, c, false)
             }
-            None => {
-                framebuffer.draw_text(position, text, scale, c, false)
-            }
+            None => { framebuffer.draw_text(position, text, scale, c, false) }
         };
 
         // Draw the border if border_px is set to a non-default value
@@ -381,6 +379,30 @@ impl<'a> ApplicationContext<'a> {
 
     pub fn remove_elements(&mut self) {
         self.ui_elements.clear();
+        self.remove_all_active_regions();
+    }
+
+    fn remove_all_active_regions(&mut self) {
+        // Collect item IDs to remove.
+        let item_ids_to_remove: Vec<_> = self.active_regions
+            .query(
+                geom::Rect::from_points(
+                    &(geom::Point { x: 0.0, y: 0.0 }),
+                    &(geom::Point {
+                        x: self.xres as f32,
+                        y: self.yres as f32,
+                    })
+                )
+            )
+            .iter()
+            .map(|(_, _, itemid)| *itemid)
+            .collect();
+
+        // Now that we're no longer borrowing `self.active_regions` immutably,
+        // we can borrow it mutably to remove items.
+        for itemid in item_ids_to_remove {
+            self.active_regions.remove(itemid);
+        }
     }
 
     pub fn draw_element(&mut self, name: &str) -> bool {

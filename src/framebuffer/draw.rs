@@ -251,19 +251,27 @@ impl framebuffer::FramebufferDraw for core::Framebuffer {
         let top_left = pos;
         let top_right = pos + vec2(size.x as i32, 0);
         let bottom_left = pos + vec2(0, size.y as i32);
-        let bottom_right = pos + size.cast().unwrap();
 
-        // top horizontal
-        self.draw_line(top_left, top_right, border_px, c);
+        // Attempt to cast size to i32 for bottom_right calculation
+        if let Some(size_i32) = size.cast::<i32>() {
+            let bottom_right = pos + size_i32;
 
-        // left vertical
-        self.draw_line(top_left, bottom_left, border_px, c);
+            // top horizontal
+            self.draw_line(top_left, top_right, border_px, c);
 
-        // bottom horizontal
-        self.draw_line(top_right, bottom_right, border_px, c);
+            // left vertical
+            self.draw_line(top_left, bottom_left, border_px, c);
 
-        // right vertical
-        self.draw_line(bottom_left, bottom_right, border_px, c);
+            // bottom horizontal
+            self.draw_line(bottom_left, bottom_right, border_px, c);
+
+            // right vertical
+            self.draw_line(top_right, bottom_right, border_px, c);
+        } else {
+            // Handle the case where the cast failed
+            // For example, log a warning or return an error
+            eprintln!("Failed to cast Vector2<u32> to Vector2<i32>. Rectangle not drawn.");
+        }
     }
 
     fn fill_rect(&mut self, pos: Point2<i32>, size: Vector2<u32>, c: color) {
