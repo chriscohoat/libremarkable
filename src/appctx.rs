@@ -382,6 +382,12 @@ impl<'a> ApplicationContext<'a> {
         self.remove_all_active_regions();
     }
 
+    pub fn remove_elements_excluding_items_but_remove_all_buttons_sorry_mvp_mode(&mut self, exclude: &[&str]) {
+        // Quickest implementation for now, sry
+        self.ui_elements.retain(|name, _| exclude.contains(&name.as_str()));
+        self.remove_all_active_regions();
+    }
+
     fn remove_all_active_regions(&mut self) {
         // Collect item IDs to remove.
         let item_ids_to_remove: Vec<_> = self.active_regions
